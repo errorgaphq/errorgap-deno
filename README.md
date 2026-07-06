@@ -6,7 +6,7 @@ Requires Deno 1.40+ (for `Deno.serve` / modern HTTP APIs).
 
 ## Install
 
-Via JSR (when published):
+Via [JSR](https://jsr.io/@errorgap/deno):
 
 ```ts
 import { Errorgap } from "jsr:@errorgap/deno@0.1";
@@ -15,7 +15,7 @@ import { Errorgap } from "jsr:@errorgap/deno@0.1";
 Or directly from the source URL:
 
 ```ts
-import { Errorgap } from "https://gitlab.jgrubbs.net/jGRUBBS/errorgap-deno/-/raw/v0.1.0/mod.ts";
+import { Errorgap } from "https://raw.githubusercontent.com/errorgaphq/errorgap-deno/v0.1.0/mod.ts";
 ```
 
 ## Configure

@@ -1,7 +1,11 @@
 {
   "name": "@errorgap/deno",
   "version": "0.1.0",
+  "license": "MIT",
   "exports": "./mod.ts",
+  "publish": {
+    "include": ["mod.ts", "src/", "README.md", "LICENSE"]
+  },
   "compilerOptions": {
     "strict": true,
     "lib": ["deno.window", "deno.ns"]
