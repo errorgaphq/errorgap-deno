@@ -9,11 +9,11 @@ interface CapturedRequest {
   body: unknown;
 }
 
-async function startIngestor(): Promise<{
+function startIngestor(): {
   endpoint: string;
   requests: CapturedRequest[];
   close: () => Promise<void>;
-}> {
+} {
   const requests: CapturedRequest[] = [];
   const ac = new AbortController();
   const server = Deno.serve({
