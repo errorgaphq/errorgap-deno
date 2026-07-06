@@ -1,4 +1,4 @@
-import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assertEquals } from "@std/assert";
 import { filterParams } from "../src/filter.ts";
 
 const DEFAULTS = ["password", "token", "secret", "api_key", "authorization", "cookie"];

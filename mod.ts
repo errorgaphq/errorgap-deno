@@ -13,7 +13,7 @@ export { Configuration } from "./src/configuration.ts";
 export { VERSION };
 
 let configuration = new Configuration();
-let client = new Client(configuration);
+const client = new Client(configuration);
 
 export interface InitOptions extends ConfigurationInput {
   /** Hook globalThis 'error' + 'unhandledrejection'. Default: true. */

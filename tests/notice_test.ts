@@ -1,4 +1,4 @@
-import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assertEquals } from "@std/assert";
 import { Configuration } from "../src/configuration.ts";
 import { buildNotice } from "../src/notice.ts";
 import { VERSION } from "../src/version.ts";
