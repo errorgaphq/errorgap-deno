@@ -73,7 +73,10 @@ Deno.test({
       assertEquals(req.method, "POST");
       assertEquals(new URL(req.url).pathname, "/api/projects/demo/notices");
       assertEquals(req.headers["x-errorgap-project-key"], "flk_test");
-      assertEquals(req.headers["user-agent"]?.startsWith("errorgap-deno/"), true);
+      assertEquals(
+        req.headers["user-agent"]?.startsWith("errorgap-deno/"),
+        true,
+      );
     } finally {
       await ing.close();
     }
@@ -93,5 +96,128 @@ Deno.test({
     const client = new Client(cfg);
     const result = await client.notify(new Error("x"), { sync: true });
     assertEquals(typeof result.error !== "undefined", true);
+  },
+});
+
+Deno.test({
+  name: "Client: POSTs a structured log to /logs",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const ing = await startIngestor();
+    try {
+      const client = new Client(
+        new Configuration({
+          endpoint: ing.endpoint,
+          projectSlug: "demo",
+          apiKey: "flk_test",
+          async: false,
+        }),
+      );
+      const result = await client.notifyLog("gateway timeout", "error", {
+        source: "payments",
+        sync: true,
+      });
+      assertEquals(result.status, 201);
+      const req = ing.requests[0];
+      assertEquals(new URL(req.url).pathname, "/api/projects/demo/logs");
+      const body = req.body as Record<string, unknown>;
+      assertEquals(body.message, "gateway timeout");
+      assertEquals(body.level, "error");
+      assertEquals(body.source, "payments");
+    } finally {
+      await ing.close();
+    }
+  },
+});
+
+Deno.test({
+  name: "Client: drops logs below the minimum level",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const ing = await startIngestor();
+    try {
+      const client = new Client(
+        new Configuration({
+          endpoint: ing.endpoint,
+          projectSlug: "demo",
+          async: false,
+          minimumLogLevel: "warn",
+        }),
+      );
+      const result = await client.notifyLog("chatty", "info", { sync: true });
+      assertEquals(result.status, 204);
+      assertEquals(ing.requests.length, 0);
+    } finally {
+      await ing.close();
+    }
+  },
+});
+
+Deno.test({
+  name: "Client: POSTs an APM transaction to /transactions",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const ing = await startIngestor();
+    try {
+      const client = new Client(
+        new Configuration({
+          endpoint: ing.endpoint,
+          projectSlug: "demo",
+          apiKey: "flk_test",
+          async: false,
+        }),
+      );
+      const result = await client.notifyTransaction(
+        {
+          kind: "web",
+          method: "GET",
+          path: "/orders/{id}",
+          pathRaw: "/orders/1",
+          durationMs: 10,
+        },
+        { sync: true },
+      );
+      assertEquals(result.status, 201);
+      const req = ing.requests[0];
+      assertEquals(
+        new URL(req.url).pathname,
+        "/api/projects/demo/transactions",
+      );
+      const body = req.body as Record<string, unknown>;
+      assertEquals(body.kind, "web");
+      assertEquals(body.path, "/orders/{id}");
+      assertEquals(body.path_raw, "/orders/1");
+    } finally {
+      await ing.close();
+    }
+  },
+});
+
+Deno.test({
+  name: "Client: skips transactions when APM is disabled",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const ing = await startIngestor();
+    try {
+      const client = new Client(
+        new Configuration({
+          endpoint: ing.endpoint,
+          projectSlug: "demo",
+          async: false,
+          apmEnabled: false,
+        }),
+      );
+      const result = await client.notifyTransaction({ durationMs: 5 }, {
+        sync: true,
+      });
+      assertEquals(result.status, 204);
+      assertEquals(ing.requests.length, 0);
+    } finally {
+      await ing.close();
+    }
   },
 });

@@ -12,6 +12,18 @@ export interface ConfigurationInput {
   async?: boolean;
   logger?: Logger | null;
   filterKeys?: string[];
+  /** Root directory used to relativize backtrace source paths. Default cwd. */
+  rootDirectory?: string;
+  /** Enable APM transaction delivery. Default true. */
+  apmEnabled?: boolean;
+  /** Fraction (0..1) of transactions to deliver. Default 1. */
+  apmSampleRate?: number;
+  /** Enable structured log delivery. Default true. */
+  logsEnabled?: boolean;
+  /** Drop logs below this level (trace<debug<info<warn<error<fatal). Default "info". */
+  minimumLogLevel?: string;
+  /** Number of breadcrumbs retained and attached to notices. Default 25. */
+  maxBreadcrumbs?: number;
 }
 
 const DEFAULT_FILTER_KEYS = [
@@ -34,6 +46,20 @@ function envOr(name: string, fallback?: string): string | undefined {
   return fallback;
 }
 
+function tryCwd(): string | undefined {
+  try {
+    return Deno.cwd();
+  } catch {
+    // cwd may be denied without --allow-read; source paths stay absolute.
+    return undefined;
+  }
+}
+
+function clampRate(rate: number): number {
+  if (!Number.isFinite(rate)) return 1;
+  return Math.min(1, Math.max(0, rate));
+}
+
 export class Configuration {
   endpoint: string;
   projectSlug: string | undefined;
@@ -44,17 +70,31 @@ export class Configuration {
   async: boolean;
   logger: Logger | null;
   filterKeys: string[];
+  rootDirectory: string | undefined;
+  apmEnabled: boolean;
+  apmSampleRate: number;
+  logsEnabled: boolean;
+  minimumLogLevel: string;
+  maxBreadcrumbs: number;
 
   constructor(input: ConfigurationInput = {}) {
-    this.endpoint = input.endpoint ?? envOr("ERRORGAP_ENDPOINT", "http://127.0.0.1:3030")!;
+    this.endpoint = input.endpoint ??
+      envOr("ERRORGAP_ENDPOINT", "http://127.0.0.1:3030")!;
     this.projectSlug = input.projectSlug ?? envOr("ERRORGAP_PROJECT_SLUG");
     this.projectId = input.projectId ?? envOr("ERRORGAP_PROJECT_ID");
     this.apiKey = input.apiKey ?? envOr("ERRORGAP_API_KEY");
-    this.environment = input.environment ?? envOr("ERRORGAP_ENVIRONMENT", "production")!;
-    this.release = input.release;
+    this.environment = input.environment ??
+      envOr("ERRORGAP_ENVIRONMENT", "production")!;
+    this.release = input.release ?? envOr("ERRORGAP_RELEASE");
     this.async = input.async ?? true;
     this.logger = input.logger === undefined ? console : input.logger;
     this.filterKeys = input.filterKeys ?? [...DEFAULT_FILTER_KEYS];
+    this.rootDirectory = input.rootDirectory ?? tryCwd();
+    this.apmEnabled = input.apmEnabled ?? true;
+    this.apmSampleRate = clampRate(input.apmSampleRate ?? 1);
+    this.logsEnabled = input.logsEnabled ?? true;
+    this.minimumLogLevel = input.minimumLogLevel ?? "info";
+    this.maxBreadcrumbs = Math.max(0, Math.trunc(input.maxBreadcrumbs ?? 25));
   }
 
   validate(): void {

@@ -1,7 +1,14 @@
 import { assertEquals } from "@std/assert";
 import { filterParams } from "../src/filter.ts";
 
-const DEFAULTS = ["password", "token", "secret", "api_key", "authorization", "cookie"];
+const DEFAULTS = [
+  "password",
+  "token",
+  "secret",
+  "api_key",
+  "authorization",
+  "cookie",
+];
 
 Deno.test("filter: masks filtered keys", () => {
   const out = filterParams(
