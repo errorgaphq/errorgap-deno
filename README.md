@@ -110,6 +110,13 @@ await Errorgap.trackJob("ReceiptJob", (spans) => {
 ```
 
 Or deliver a pre-built transaction directly with `Errorgap.notifyTransaction`.
+
+Errors reported while a `trackTransaction`/`trackJob` callback runs carry the
+transaction's id as `context.transaction_id`, so errorgap shows the error a
+request actually raised on its trace and links each occurrence to its request.
+The id follows awaits (`AsyncLocalStorage` from `node:async_hooks`) and never
+leaks into a concurrent request. In a custom `Deno.serve` handler,
+`runInTransaction(id, fn)` and `currentTransactionId()` do the same.
 Set `apmEnabled: false` to disable, or `apmSampleRate` (0..1) to sample.
 
 ## Configuration reference
