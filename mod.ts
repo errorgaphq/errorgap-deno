@@ -8,6 +8,11 @@ import { BreadcrumbBuffer, type BreadcrumbInput } from "./src/breadcrumbs.ts";
 import { SpanCollector, type Transaction } from "./src/apm.ts";
 import type { NoticeContext } from "./src/notice.ts";
 import { VERSION } from "./src/version.ts";
+import {
+  currentTransactionId,
+  newTransactionId,
+  runInTransaction,
+} from "./src/transaction_context.ts";
 
 export type { ConfigurationInput, Logger } from "./src/configuration.ts";
 export type { BacktraceFrame, SourceExcerpt } from "./src/backtrace.ts";
@@ -28,6 +33,11 @@ export {
   SpanCollector,
 } from "./src/apm.ts";
 export { BreadcrumbBuffer } from "./src/breadcrumbs.ts";
+export {
+  currentTransactionId,
+  newTransactionId,
+  runInTransaction,
+} from "./src/transaction_context.ts";
 export { VERSION };
 
 let configuration = new Configuration();
@@ -98,12 +108,15 @@ async function trackTransaction<T>(
   const spans = new SpanCollector();
   const startedAt = new Date().toISOString();
   const start = Date.now();
+  // Errors reported while the operation runs carry this transaction's id.
+  const id = meta.id ?? newTransactionId();
   try {
-    return await operation(spans);
+    return await runInTransaction(id, () => operation(spans));
   } finally {
     void notifyTransaction({
       kind: meta.kind ?? "web",
       ...meta,
+      id,
       occurredAt: meta.occurredAt ?? startedAt,
       durationMs: Date.now() - start,
       spans: spans.snapshot(),
@@ -123,10 +136,12 @@ async function trackJob<T>(
   const spans = new SpanCollector();
   const startedAt = new Date().toISOString();
   const start = Date.now();
+  const id = newTransactionId();
   try {
-    return await operation(spans);
+    return await runInTransaction(id, () => operation(spans));
   } finally {
     void notifyTransaction({
+      id,
       kind: "job",
       jobClass,
       queue: meta.queue ?? "default",
@@ -152,6 +167,8 @@ function getClient(): Client {
 
 export const Errorgap: {
   init: typeof init;
+  currentTransactionId: typeof currentTransactionId;
+  runInTransaction: typeof runInTransaction;
   notify: typeof notify;
   addBreadcrumb: typeof addBreadcrumb;
   clearBreadcrumbs: typeof clearBreadcrumbs;
@@ -165,6 +182,8 @@ export const Errorgap: {
   VERSION: string;
 } = {
   init,
+  currentTransactionId,
+  runInTransaction,
   notify,
   addBreadcrumb,
   clearBreadcrumbs,
