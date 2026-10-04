@@ -5,7 +5,13 @@ import {
   uninstallGlobalHandlers,
 } from "./src/handlers.ts";
 import { BreadcrumbBuffer, type BreadcrumbInput } from "./src/breadcrumbs.ts";
-import { SpanCollector, type Transaction } from "./src/apm.ts";
+import {
+  browserTraceId,
+  routeName,
+  SpanCollector,
+  TRACE_HEADER,
+  type Transaction,
+} from "./src/apm.ts";
 import type { NoticeContext } from "./src/notice.ts";
 import { VERSION } from "./src/version.ts";
 import {
@@ -27,10 +33,13 @@ export type { Span, SpanLocation, Transaction } from "./src/apm.ts";
 export { Client } from "./src/client.ts";
 export { Configuration } from "./src/configuration.ts";
 export {
+  browserTraceId,
   databaseSpan,
   externalSpan,
   normalizeSql,
+  routeName,
   SpanCollector,
+  TRACE_HEADER,
 } from "./src/apm.ts";
 export { BreadcrumbBuffer } from "./src/breadcrumbs.ts";
 export {
@@ -153,6 +162,71 @@ async function trackJob<T>(
   }
 }
 
+/** Options for {@link withErrorgap}. */
+export interface ServeTrackingOptions {
+  /**
+   * The route a request is grouped by. Defaults to the path with id-like
+   * segments replaced by `:id` (see `routeName`).
+   */
+  route?: (request: Request) => string | undefined;
+  /** Report errors the handler throws. Defaults to true. */
+  reportErrors?: boolean;
+}
+
+/**
+ * Wrap a `Deno.serve` fetch handler so each request is an APM transaction
+ * (sent with `apmEnabled`). Errors reported while it runs carry the
+ * transaction id, an error it throws is reported (and rethrown), and the
+ * browser SDK's `x-errorgap-trace` header links the browser's view of the
+ * call to it. Works for any `(request) => Response` handler, e.g. Hono's
+ * `app.fetch`.
+ */
+export function withErrorgap<A extends unknown[]>(
+  handler: (request: Request, ...rest: A) => Response | Promise<Response>,
+  options: ServeTrackingOptions = {},
+): (request: Request, ...rest: A) => Promise<Response> {
+  return async (request: Request, ...rest: A): Promise<Response> => {
+    const id = newTransactionId();
+    const startedAt = new Date().toISOString();
+    const start = performance.now();
+    const pathname = new URL(request.url).pathname;
+    let status = 500;
+    try {
+      const response = await runInTransaction(
+        id,
+        () => handler(request, ...rest),
+      );
+      status = response.status;
+      return response;
+    } catch (error) {
+      if (options.reportErrors !== false) {
+        await notify(error, {
+          context: {
+            transaction_id: id,
+            url: request.url.split("?")[0],
+            action: request.method,
+          },
+          environment: { method: request.method, path: pathname },
+          sync: true,
+        });
+      }
+      throw error;
+    } finally {
+      void notifyTransaction({
+        id,
+        traceId: browserTraceId(request.headers.get(TRACE_HEADER)),
+        kind: "web",
+        method: request.method,
+        path: options.route?.(request) ?? routeName(pathname),
+        pathRaw: pathname,
+        statusCode: status,
+        durationMs: performance.now() - start,
+        occurredAt: startedAt,
+      });
+    }
+  };
+}
+
 function flush(): Promise<void> {
   return client.flush();
 }
@@ -176,6 +250,7 @@ export const Errorgap: {
   notifyTransaction: typeof notifyTransaction;
   trackTransaction: typeof trackTransaction;
   trackJob: typeof trackJob;
+  withErrorgap: typeof withErrorgap;
   flush: typeof flush;
   configuration: typeof getConfiguration;
   client: typeof getClient;
@@ -191,6 +266,7 @@ export const Errorgap: {
   notifyTransaction,
   trackTransaction,
   trackJob,
+  withErrorgap,
   flush,
   configuration: getConfiguration,
   client: getClient,
