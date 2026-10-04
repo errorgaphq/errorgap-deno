@@ -11,7 +11,7 @@ Requires Deno 1.40+ (for `Deno.serve` / modern HTTP APIs).
 Via [JSR](https://jsr.io/@errorgap/deno):
 
 ```ts
-import { Errorgap } from "jsr:@errorgap/deno@0.2";
+import { Errorgap } from "jsr:@errorgap/deno@0.4";
 ```
 
 Or directly from the source URL:
@@ -118,6 +118,25 @@ The id follows awaits (`AsyncLocalStorage` from `node:async_hooks`) and never
 leaks into a concurrent request. In a custom `Deno.serve` handler,
 `runInTransaction(id, fn)` and `currentTransactionId()` do the same.
 Set `apmEnabled: false` to disable, or `apmSampleRate` (0..1) to sample.
+
+### Tracking requests
+
+Wrap a `Deno.serve` fetch handler (or any `(request) => Response` handler, such
+as Hono's `app.fetch`) with `withErrorgap` and each request becomes a `web`
+transaction (sent with `apmEnabled`), grouped by path with id-like segments
+templated (`/orders/123` → `/orders/:id`; pass `{ route: (request) => ... }`
+for exact names). Errors reported while it runs carry its transaction id, an
+error the handler throws is reported and rethrown, and the `x-errorgap-trace`
+header sent by `@errorgap/browser` 0.3+ links the browser's view of the call
+to it.
+
+```ts
+import { withErrorgap } from "jsr:@errorgap/deno@0.4";
+
+Deno.serve(withErrorgap(async (request) => {
+  return new Response("ok");
+}));
+```
 
 ## Configuration reference
 

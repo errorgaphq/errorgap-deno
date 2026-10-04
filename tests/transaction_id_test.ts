@@ -1,5 +1,10 @@
 import { assertEquals, assertMatch } from "@std/assert";
-import { currentTransactionId, Errorgap, runInTransaction } from "../mod.ts";
+import {
+  currentTransactionId,
+  Errorgap,
+  runInTransaction,
+  withErrorgap,
+} from "../mod.ts";
 
 // Errors reported during a transaction carry its id, so errorgap shows the
 // error a request actually raised on its trace and links the two.
@@ -92,5 +97,52 @@ Deno.test("each job gets its own id and concurrent flows stay apart", async () =
       ),
     );
     assertEquals(results, ["a", "b"]);
+  });
+});
+
+Deno.test("withErrorgap records a Deno.serve request and links its errors", async () => {
+  await withIngestor(async (requests) => {
+    const ac = new AbortController();
+    const app = Deno.serve(
+      {
+        hostname: "127.0.0.1",
+        port: 0,
+        signal: ac.signal,
+        onListen: () => {},
+        onError: () => new Response("oops", { status: 500 }),
+      },
+      withErrorgap(async (request: Request): Promise<Response> => {
+        await new Promise((r) => setTimeout(r, 2));
+        if (new URL(request.url).pathname === "/boom") {
+          throw new Error("kaboom");
+        }
+        return new Response("ok", { status: 201 });
+      }),
+    );
+    const port = (app.addr as Deno.NetAddr).port;
+    const ok = await fetch(`http://127.0.0.1:${port}/orders/123?x=1`, {
+      headers: { "x-errorgap-trace": "0192F3C4-7A1B-4C2D-9E3F-0123456789AB" },
+    });
+    await ok.body?.cancel();
+    const boom = await fetch(`http://127.0.0.1:${port}/boom`);
+    await boom.body?.cancel();
+    assertEquals([ok.status, boom.status], [201, 500]);
+    for (let i = 0; i < 100 && requests.length < 3; i++) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    await Errorgap.flush();
+    ac.abort();
+    await app.finished.catch(() => {});
+
+    const txns = requests.filter((r) => r.path.endsWith("/transactions")).map((
+      r,
+    ) => r.body);
+    const okTxn = txns.find((t) => t.path_raw === "/orders/123")!;
+    const boomTxn = txns.find((t) => t.path_raw === "/boom")!;
+    assertEquals(okTxn.path, "/orders/:id");
+    assertEquals(okTxn.trace_id, "0192f3c4-7a1b-4c2d-9e3f-0123456789ab");
+    assertEquals(boomTxn.status_code, 500);
+    const notice = requests.find((r) => r.path.endsWith("/notices"))!.body;
+    assertEquals(notice.context.transaction_id, boomTxn.id);
   });
 });
