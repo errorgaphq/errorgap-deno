@@ -20,12 +20,14 @@ import {
   runInTransaction,
 } from "./src/transaction_context.ts";
 
-export type { ConfigurationInput, Logger } from "./src/configuration.ts";
+export type { BeforeNotify, ConfigurationInput, Logger } from "./src/configuration.ts";
+export type { FilterKey } from "./src/filter.ts";
 export type { BacktraceFrame, SourceExcerpt } from "./src/backtrace.ts";
 export type {
   NoticeCause,
   NoticeContext,
   NoticePayload,
+  NoticeUser,
 } from "./src/notice.ts";
 export type { DeliveryResult, LogOptions } from "./src/client.ts";
 export type { Breadcrumb, BreadcrumbInput } from "./src/breadcrumbs.ts";
@@ -56,15 +58,21 @@ let breadcrumbs = new BreadcrumbBuffer(configuration.maxBreadcrumbs);
 export interface InitOptions extends ConfigurationInput {
   /** Hook globalThis 'error' + 'unhandledrejection'. Default: true. */
   captureGlobals?: boolean;
+  /**
+   * After reporting an uncaught error or unhandled rejection, exit with code
+   * 1 as Deno does. Defaults to `true`; with `false` the process keeps
+   * running after the report.
+   */
+  exitOnUncaught?: boolean;
 }
 
 function init(options: InitOptions = {}): void {
-  const { captureGlobals = true, ...rest } = options;
+  const { captureGlobals = true, exitOnUncaught = true, ...rest } = options;
   configuration = new Configuration(rest);
   client.configure(configuration);
   breadcrumbs = new BreadcrumbBuffer(configuration.maxBreadcrumbs);
   if (captureGlobals) {
-    installGlobalHandlers(client, breadcrumbs);
+    installGlobalHandlers(client, breadcrumbs, { exitOnUncaught });
   } else {
     uninstallGlobalHandlers();
   }

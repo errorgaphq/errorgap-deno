@@ -1,12 +1,21 @@
 import type { Configuration } from "./configuration.ts";
 import { type BacktraceFrame, parseBacktrace } from "./backtrace.ts";
 import type { Breadcrumb } from "./breadcrumbs.ts";
-import { filterParams } from "./filter.ts";
+import { cleanRecord, filterParams, truncateString } from "./filter.ts";
 import { VERSION } from "./version.ts";
 
 const MAX_CAUSE_DEPTH = 10;
 
+/** Who the request or job was acting for; sent as `session.user_id` / `session.user_email`. */
+export interface NoticeUser {
+  id?: string | number;
+  email?: string;
+}
+
+const MAX_MESSAGE_LENGTH = 8192;
+
 export interface NoticeContext {
+  user?: NoticeUser | null;
   context?: Record<string, unknown>;
   environment?: Record<string, unknown>;
   session?: Record<string, unknown>;
@@ -47,7 +56,7 @@ export function buildNotice(
     errors: [
       {
         type: errorType(error),
-        message: String(error.message ?? ""),
+        message: truncateString(String(error.message ?? ""), MAX_MESSAGE_LENGTH),
         backtrace: flattenBacktrace(error, configuration.rootDirectory),
       },
     ],
@@ -60,10 +69,13 @@ export function buildNotice(
       runtime_version: tryDenoVersion(),
       ...(causes.length > 0 ? { causes } : {}),
       ...(breadcrumbs.length > 0 ? { breadcrumbs } : {}),
-      ...(options.context ?? {}),
+      ...cleanRecord(options.context),
     },
-    environment: options.environment ?? {},
-    session: options.session ?? {},
+    environment: cleanRecord(options.environment),
+    session: filterParams(
+      { ...userSession(options.user), ...(options.session ?? {}) },
+      configuration.filterKeys,
+    ),
     params: filterParams(options.params ?? {}, configuration.filterKeys),
   };
 }
@@ -91,7 +103,7 @@ function collectCauses(error: Error): NoticeCause[] {
     .slice(1)
     .map((link) => ({
       type: errorType(link),
-      message: String(link.message ?? ""),
+      message: truncateString(String(link.message ?? ""), MAX_MESSAGE_LENGTH),
     }));
 }
 
@@ -123,4 +135,13 @@ function errorType(error: Error): string {
     return error.name;
   }
   return error.constructor?.name ?? "Error";
+}
+
+function userSession(user: NoticeUser | null | undefined): Record<string, unknown> {
+  const session: Record<string, unknown> = {};
+  if (user?.id !== undefined && user.id !== null && String(user.id) !== "") {
+    session.user_id = String(user.id);
+  }
+  if (user?.email) session.user_email = String(user.email);
+  return session;
 }

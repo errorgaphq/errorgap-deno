@@ -2,6 +2,18 @@ export interface Logger {
   warn(message: string, ...args: unknown[]): void;
 }
 
+import type { FilterKey } from "./filter.ts";
+import { detectRelease } from "./release.ts";
+import type { NoticePayload } from "./notice.ts";
+
+/**
+ * Sees each notice before it is sent. Change it in place or return a
+ * replacement; return `false` or `null` to drop it.
+ */
+export type BeforeNotify = (
+  notice: NoticePayload,
+) => NoticePayload | false | null | void | Promise<NoticePayload | false | null | void>;
+
 export interface ConfigurationInput {
   endpoint?: string;
   projectSlug?: string;
@@ -11,7 +23,15 @@ export interface ConfigurationInput {
   release?: string;
   async?: boolean;
   logger?: Logger | null;
-  filterKeys?: string[];
+  /** Substrings (case-insensitive) or regexps; matching keys are masked at any depth. */
+  filterKeys?: FilterKey[];
+  beforeNotify?: BeforeNotify;
+  /** Environments in which nothing is sent. */
+  ignoreEnvironments?: string[];
+  /** Seconds allowed for each request to errorgap. Default 5. */
+  timeout?: number;
+  /** Payloads held for sending; the oldest is dropped when full. Default 100. */
+  queueSize?: number;
   /** Root directory used to relativize backtrace source paths. Default cwd. */
   rootDirectory?: string;
   /** Enable APM transaction delivery. Default true. */
@@ -46,6 +66,13 @@ function envOr(name: string, fallback?: string): string | undefined {
   return fallback;
 }
 
+function ignoredEnvironmentsFromEnv(): string[] {
+  return (envOr("ERRORGAP_IGNORE_ENVIRONMENTS") ?? "")
+    .split(",")
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0);
+}
+
 function tryCwd(): string | undefined {
   try {
     return Deno.cwd();
@@ -69,7 +96,11 @@ export class Configuration {
   release: string | undefined;
   async: boolean;
   logger: Logger | null;
-  filterKeys: string[];
+  filterKeys: FilterKey[];
+  beforeNotify: BeforeNotify | undefined;
+  ignoreEnvironments: string[];
+  timeout: number;
+  queueSize: number;
   rootDirectory: string | undefined;
   apmEnabled: boolean;
   apmSampleRate: number;
@@ -85,16 +116,26 @@ export class Configuration {
     this.apiKey = input.apiKey ?? envOr("ERRORGAP_API_KEY");
     this.environment = input.environment ??
       envOr("ERRORGAP_ENVIRONMENT", "production")!;
-    this.release = input.release ?? envOr("ERRORGAP_RELEASE");
+    // Unset, the release is the hosting platform's commit variable or the
+    // git checkout's HEAD.
+    this.release = input.release ?? detectRelease(input.rootDirectory ?? tryCwd());
     this.async = input.async ?? true;
     this.logger = input.logger === undefined ? console : input.logger;
     this.filterKeys = input.filterKeys ?? [...DEFAULT_FILTER_KEYS];
+    this.beforeNotify = input.beforeNotify;
+    this.ignoreEnvironments = input.ignoreEnvironments ?? ignoredEnvironmentsFromEnv();
+    this.timeout = input.timeout ?? 5;
+    this.queueSize = input.queueSize ?? 100;
     this.rootDirectory = input.rootDirectory ?? tryCwd();
     this.apmEnabled = input.apmEnabled ?? true;
     this.apmSampleRate = clampRate(input.apmSampleRate ?? 1);
     this.logsEnabled = input.logsEnabled ?? true;
     this.minimumLogLevel = input.minimumLogLevel ?? "info";
     this.maxBreadcrumbs = Math.max(0, Math.trunc(input.maxBreadcrumbs ?? 25));
+  }
+
+  ignoredEnvironment(): boolean {
+    return this.ignoreEnvironments.includes(this.environment);
   }
 
   validate(): void {
