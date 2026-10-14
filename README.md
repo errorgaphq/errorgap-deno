@@ -63,6 +63,47 @@ original source).
 throw new Error("could not settle order", { cause: gatewayError });
 ```
 
+## Filtering, hooks and delivery
+
+```ts
+Errorgap.init({
+  filterKeys: ["password", "token", /^ssn$/],
+  ignoreEnvironments: ["test"],
+  beforeNotify(notice) {
+    if (notice.errors[0]?.type === "AbortError") return false; // drop it
+    notice.context.team = "billing";                            // or change it
+  },
+});
+
+Errorgap.notify(err, { user: { id: account.id, email: account.email } });
+```
+
+`filterKeys` (substrings or regexps) are masked at any depth in `params` and
+`session`. Values that cannot be serialized (cycles, bigints) and oversized
+strings or collections are cut rather than losing the notice.
+
+Payloads are queued (at most `queueSize`, oldest dropped first) and sent a few
+at a time, each with a `timeout`. A send that fails on the network or with a
+5xx is retried up to three times; after a 429 the SDK stops sending for the
+server's `Retry-After`.
+
+Deno exits the moment an uncaught error's listeners return, so the SDK holds
+the exit, sends the report, prints the error and then exits with code 1
+itself (`exitOnUncaught: false` keeps the process running instead).
+
+With `release` unset, the release is `ERRORGAP_RELEASE`, the hosting platform's
+commit variable (`DENO_DEPLOYMENT_ID`, `SOURCE_VERSION`, …) or, when the
+process may read it, the git checkout's HEAD.
+
+## Remote settings
+
+Errors, performance data and logs can each be switched off for a project in
+errorgap (Project settings › What SDKs send). Running apps follow within ten
+minutes, with no deploy or release: the SDK re-reads
+`GET /api/projects/:slug/config` in the background. If errorgap cannot be
+reached, everything stays on. `remoteSettings: false` ignores the project's
+switches.
+
 ## Breadcrumbs
 
 Record diagnostic trail entries that attach to subsequent notices:
