@@ -26,6 +26,11 @@ export interface ConfigurationInput {
   /** Substrings (case-insensitive) or regexps; matching keys are masked at any depth. */
   filterKeys?: FilterKey[];
   beforeNotify?: BeforeNotify;
+  /**
+   * Follow the project's settings in errorgap (Project settings › What SDKs
+   * send): stop sending what is switched off there. Defaults to true.
+   */
+  remoteSettings?: boolean;
   /** Environments in which nothing is sent. */
   ignoreEnvironments?: string[];
   /** Seconds allowed for each request to errorgap. Default 5. */
@@ -98,6 +103,7 @@ export class Configuration {
   logger: Logger | null;
   filterKeys: FilterKey[];
   beforeNotify: BeforeNotify | undefined;
+  remoteSettings: boolean;
   ignoreEnvironments: string[];
   timeout: number;
   queueSize: number;
@@ -123,6 +129,8 @@ export class Configuration {
     this.logger = input.logger === undefined ? console : input.logger;
     this.filterKeys = input.filterKeys ?? [...DEFAULT_FILTER_KEYS];
     this.beforeNotify = input.beforeNotify;
+    this.remoteSettings = input.remoteSettings ??
+      (envOr("ERRORGAP_REMOTE_SETTINGS") ?? "").trim().toLowerCase() !== "false";
     this.ignoreEnvironments = input.ignoreEnvironments ?? ignoredEnvironmentsFromEnv();
     this.timeout = input.timeout ?? 5;
     this.queueSize = input.queueSize ?? 100;

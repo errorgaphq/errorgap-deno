@@ -95,6 +95,15 @@ With `release` unset, the release is `ERRORGAP_RELEASE`, the hosting platform's
 commit variable (`DENO_DEPLOYMENT_ID`, `SOURCE_VERSION`, …) or, when the
 process may read it, the git checkout's HEAD.
 
+## Remote settings
+
+Errors, performance data and logs can each be switched off for a project in
+errorgap (Project settings › What SDKs send). Running apps follow within ten
+minutes, with no deploy or release: the SDK re-reads
+`GET /api/projects/:slug/config` in the background. If errorgap cannot be
+reached, everything stays on. `remoteSettings: false` ignores the project's
+switches.
+
 ## Breadcrumbs
 
 Record diagnostic trail entries that attach to subsequent notices:

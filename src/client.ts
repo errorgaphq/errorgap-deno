@@ -1,4 +1,5 @@
 import type { Configuration } from "./configuration.ts";
+import { RemoteSettings, type RemoteKind } from "./remote_settings.ts";
 import { buildNotice, type NoticeContext, type NoticePayload } from "./notice.ts";
 import { type Transaction, transactionPayload } from "./apm.ts";
 import { logLevelRank, normalizeLogLevel } from "./logs.ts";
@@ -16,7 +17,16 @@ export interface LogOptions {
   sync?: boolean;
 }
 
+/** Which of the project's switches covers each kind of payload. */
+const REMOTE_KINDS: Record<string, RemoteKind | undefined> = {
+  notices: "errors",
+  transactions: "apm",
+  logs: "logs",
+};
+
 export class Client {
+  /** What errorgap wants this app to send (the project's remote settings). */
+  readonly remote: RemoteSettings = new RemoteSettings(() => this.configuration);
   private delivery = new Delivery(() => ({
     endpoint: this.configuration.endpoint,
     projectSlug: this.configuration.projectSlug,
@@ -115,6 +125,8 @@ export class Client {
     sync?: boolean,
   ): Promise<DeliveryResult> {
     if (this.configuration.ignoredEnvironment()) return { status: 204 };
+    const kind = REMOTE_KINDS[resource];
+    if (kind && !this.remote.enabled(kind)) return { status: 204 };
     if (sync || !this.configuration.async) return await this.delivery.send(resource, payload);
     return this.delivery.enqueue(resource, payload);
   }
